@@ -12,6 +12,29 @@ class ImageRepository:
     def __init__(self) -> None:
         self.client: Client = create_client(settings.supabase_url, settings.supabase_service_key)
 
+    def create_image(self, *, user_id: str, filename: str, original_path: str, thumbnail_path: Optional[str] = None) -> Dict[str, Any]:
+        data = {
+            "user_id": user_id,
+            "filename": filename,
+            "original_path": original_path,
+            "thumbnail_path": thumbnail_path,
+        }
+        response = self.client.table("images").insert(data).execute()
+        if not response.data or len(response.data) == 0:
+            raise RuntimeError("Failed to create image record")
+        return response.data[0]
+
+    def create_initial_metadata(self, *, image_id: int, user_id: str, status: str = "pending") -> Dict[str, Any]:
+        data = {
+            "image_id": image_id,
+            "user_id": user_id,
+            "ai_processing_status": status,
+        }
+        response = self.client.table("image_metadata").insert(data).execute()
+        if not response.data or len(response.data) == 0:
+            raise RuntimeError("Failed to create metadata record")
+        return response.data[0]
+
     def get_metadata(self, image_id: int, user_id: str) -> Optional[Dict[str, Any]]:
         response = (
             self.client.table("image_metadata")
@@ -80,7 +103,13 @@ class StorageRepository:
 
     def upload_thumbnail(self, path: str, data: bytes, content_type: str = "image/jpeg") -> str:
         self.client.storage.from_(self.bucket).upload(
-            path, data, {"content-type": content_type, "upsert": True}
+            path, data, {"content-type": content_type}
+        )
+        return path
+
+    def upload_original(self, path: str, data: bytes, content_type: str = "image/jpeg") -> str:
+        self.client.storage.from_(self.bucket).upload(
+            path, data, {"content-type": content_type}
         )
         return path
 

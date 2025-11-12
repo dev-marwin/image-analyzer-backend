@@ -20,13 +20,8 @@ class AIService:
         self.client = OpenAI(api_key=self.settings.openai_api_key)
 
     def analyze_image(self, image_data: bytes) -> Dict[str, List[str] | str]:
-        """
-        Calls the configured OpenAI vision model to produce tags and a description.
-        Returns a dictionary with 'tags' and 'description'.
-        """
         logger.info("Starting AI analysis using model %s", self.settings.openai_model)
         
-        # Determine image MIME type (assume JPEG if unknown)
         try:
             from PIL import Image
             from io import BytesIO
@@ -42,14 +37,15 @@ class AIService:
             "You are assisting with an AI-powered photo gallery. "
             "Describe the image in one concise, vivid sentence (max 35 words). "
             "Return 5-10 short keyword tags (single or double words) describing the most important concepts. "
-            "Respond strictly as valid JSON with keys: description (string) and tags (array of strings)."
+            "Respond ONLY with valid JSON (no markdown, no code blocks, no explanations). "
+            "Required JSON format: {\"description\": \"...\", \"tags\": [\"tag1\", \"tag2\", ...]}"
         )
 
         try:
             response = self.client.chat.completions.create(
                 model=self.settings.openai_model,
                 messages=[
-                    {"role": "system", "content": "You are a world-class visual analyst. Always respond with valid JSON only."},
+                    {"role": "system", "content": "You are a world-class visual analyst. Respond ONLY with valid JSON. Do not use markdown code blocks."},
                     {
                         "role": "user",
                         "content": [
@@ -61,6 +57,7 @@ class AIService:
                         ],
                     },
                 ],
+                response_format={"type": "json_object"},
                 max_tokens=300,
             )
         except Exception as e:
@@ -69,8 +66,17 @@ class AIService:
 
         response_text = response.choices[0].message.content or ""
 
+        cleaned_text = response_text.strip()
+        if cleaned_text.startswith("```"):
+            lines = cleaned_text.split("\n")
+            if lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            cleaned_text = "\n".join(lines).strip()
+        
         try:
-            parsed = json.loads(response_text)
+            parsed = json.loads(cleaned_text)
         except json.JSONDecodeError as exc:
             logger.error("Failed to parse AI JSON response: %s. Response was: %s", exc, response_text[:200])
             raise RuntimeError(f"AI returned invalid JSON: {exc}") from exc
@@ -90,4 +96,3 @@ class AIService:
 
 
 ai_service = AIService()
-
